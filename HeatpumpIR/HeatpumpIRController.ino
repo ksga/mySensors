@@ -21,6 +21,7 @@
  * REVISION HISTORY
  * Version 1.0 - Toni A - https://github.com/ToniA/arduino-heatpumpir
  * Version 1.1 - ksga added DS18B20
+ * Version 1.2 - Added logic to only send temperature is changed and valid. Removed unused lines.
  *
  * DESCRIPTION
  * Heatpump controller
@@ -114,10 +115,12 @@ int8_t panasonicCKPTimer = 1;
 
 // DS18B20 temperature sensor
 #define ONE_WIRE_BUS 4
+#define COMPARE_TEMP 1 // Send temperature only if changed? 1 = Yes 0 = No
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 //DS18B20 address. Use sketch at https://arduino-info.wikispaces.com/Brick-Temperature-DS18B20#Test%20Sketch%20to%20read%20DS18B20%20addresses to find address of sensor.
 DeviceAddress insideThermometer = { 0x28, 0x8C, 0x23, 0x04, 0x00, 0x00, 0x80, 0xBD };
+float lastTemperature;
 
 void setup()
 {
@@ -286,5 +289,16 @@ void sendTempMeasurements()
 
   Serial.print(F("T: "));Serial.println(temperature);
 
-  send(temperatureMsg.set(temperature,1));
+      // Only send data if temperature has changed and no error
+    #if COMPARE_TEMP == 1
+    if (lastTemperature != temperature && temperature != -127.00 && temperature != 85.00) {
+    #else
+    if (temperature != -127.00 && temperature != 85.00) {
+    #endif
+
+      // Send in the new temperature
+      send(temperatureMsg.set(temperature,1));
+      // Save new temperatures for next compare
+      lastTemperature=temperature;
+    }
 }
