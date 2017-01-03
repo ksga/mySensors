@@ -19,7 +19,9 @@
  *******************************
  *
  * REVISION HISTORY
- * Version 0.1 - Based on MySensors IRRemote v2.0 - Support for NAD C 320 Receiver / C 440 AM/FM Tuner. Hardcoded commands 21-35.
+ * Version 0.1 - Based on MySensors IRRemote v2.0
+ * Version 0.2 - Added temperature measurements
+ * Version 0.3 - Compare temperature and ignore faulty readings added
  * 
  * DESCRIPTION
  *
@@ -55,29 +57,34 @@
 // OR install IRRemote via "Sketch" -> "Include Library" -> "Manage Labraries..."
 // Search for IRRemote b shirif and press the install button
 
+#include <Timer.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
 // Arduino pin to connect the IR receiver to
 int RECV_PIN     = 8;
 
 #define CHILD_ID  2  
+#define CHILD_TEMP   9
 
 #define MY_RAWBUF  50
 const char * TYPE2STRING[] = {
-        "UNKONWN",
-        "RC5",
-        "RC6",
+//        "UNKONWN",
+//        "RC5",
+//        "RC6",
         "NEC",
-        "Sony",
-        "Panasonic",
-        "JVC",
-        "SAMSUNG",
-        "Whynter",
-        "AIWA RC T501",
-        "LG",
-        "Sanyo",
-        "Mitsubishi",
-        "Dish",
-        "Sharp",
-        "Denon"
+//        "Sony",
+//        "Panasonic",
+//        "JVC",
+//        "SAMSUNG",
+//        "Whynter",
+//        "AIWA RC T501",
+//        "LG",
+//        "Sanyo",
+//        "Mitsubishi",
+//        "Dish",
+//        "Sharp",
+//        "Denon"
 };
 #define Type2String(x)   TYPE2STRING[x < 0 ? 0 : x]
 #define AddrTxt          F(" addres: 0x")
@@ -93,7 +100,7 @@ typedef union
     decode_type_t type;            // The type of code
     unsigned long value;           // The data bits if type is not raw
     int           len;             // The length of the code in bits
-    unsigned int  address;         // Used by Panasonic & Sharp [16-bits]
+    unsigned int  address;         
   } code;
 #ifdef IR_SUPPORT_UNKNOWN_CODES      
   struct
@@ -152,6 +159,20 @@ IRCode PresetIRCodes[] = {
 MyMessage msgIrReceive(CHILD_ID, V_IR_RECEIVE);
 MyMessage msgIrRecord(CHILD_ID, V_IR_RECORD); 
 
+MyMessage temperatureMsg(CHILD_TEMP, V_TEMP);
+
+Timer timer;
+int8_t tempMeasureTimer = 1;
+
+#define ONE_WIRE_BUS 4
+#define COMPARE_TEMP 1 // Send temperature only if changed? 1 = Yes 0 = No
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+//DS18B20 address. Use sketch at https://arduino-info.wikispaces.com/Brick-Temperature-DS18B20#Test%20Sketch%20to%20read%20DS18B20%20addresses to find address of sensor.
+DeviceAddress insideThermometer = { 0x28, 0xFF, 0x47, 0xE9, 0x37, 0x16, 0x04, 0xA9 };
+
+float lastTemperature;
+
 void setup()  
 {  
   // Tell MYS Controller that we're NOT recording
@@ -163,20 +184,30 @@ void setup()
   // Start the ir receiver
   irrecv.enableIRIn(); 
 
+// DS18B20 temperature sensor
+  tempMeasureTimer = timer.every(120000, sendTempMeasurements);
+
+  sensors.begin();
+  sensors.setResolution(insideThermometer, 11);
+
   Serial.println(F("Init done..."));
 }
 
 void presentation () 
 {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Stue_hi-fi", "0.1");
+  sendSketchInfo("Stue_hi-fi", "0.3");
 
   // Register a sensors to gw. Use binary light for test purposes.
   present(CHILD_ID, S_IR);
+
+  // DS18B20 temperature sensor
+  present(CHILD_TEMP,S_TEMP, "Temperature");  
 }
 
 void loop() 
 {
+  timer.update();
   if (irrecv.decode(&ircode)) {
       dump(&ircode);
       if (progModeId != NO_PROG_MODE) {
@@ -247,13 +278,6 @@ void receive(const MyMessage &message) {
 
 byte lookUpPresetCode (decode_results *ircode)
 {
-    // Get rit of the RC5/6 toggle bit when looking up
-    if (ircode->decode_type == RC5)  {
-        ircode->value = ircode->value & 0x7FF;
-    }
-    if (ircode->decode_type == RC6)  {
-        ircode->value = ircode->value & 0xFFFF7FFF;
-    }
     for (byte index = 0; index < MAX_STORED_IR_CODES; index++)
     {
       if ( StoredIRCodes[index].code.type  == ircode->decode_type &&
@@ -302,17 +326,10 @@ bool storeRCCode(byte index) {
        Serial.println(F("repeat; ignoring."));
        return false;
    }
-   // Get rit of the toggle bit when storing RC5/6 
-   if (ircode.decode_type == RC5)  {
-        ircode.value = ircode.value & 0x07FF;
-   }
-   if (ircode.decode_type == RC6)  {
-        ircode.value = ircode.value & 0xFFFF7FFF;
-   }
 
    StoredIRCodes[index].code.type      = ircode.decode_type;
    StoredIRCodes[index].code.value     = ircode.value;
-   StoredIRCodes[index].code.address   = ircode.address;      // Used by Panasonic & Sharp [16-bits]
+   StoredIRCodes[index].code.address   = ircode.address;
    StoredIRCodes[index].code.len       = ircode.bits;
    Serial.print(F(" value: 0x"));
    Serial.println(ircode.value, HEX);
@@ -333,66 +350,10 @@ void sendRCCode(byte index) {
 
    Serial.print(F(" - sent "));
    Serial.print(Type2String(pIr->code.type));
-   if (pIr->code.type == RC5) {
-       // For RC5 and RC6 there is a toggle bit for each succesor IR code sent alway toggle this bit, needs to repeat the command 3 times with 100 mS pause
-       pIr->code.value ^= 0x0800;
-       for (byte i=0; i < 3; i++) {
-         if (i > 0) { delay(100); } 
-         irsend.sendRC5(pIr->code.value, pIr->code.len);
-       }
-    } 
-    else if (pIr->code.type == RC6) {
-       // For RC5 and RC6 there is a toggle bit for each succesor IR code sent alway toggle this bit, needs to repeat the command 3 times with 100 mS pause
-       if (pIr->code.len == 20) {
-              pIr->code.value ^= 0x10000;
-       }
-       for (byte i=0; i < 3; i++) {
-         if (i > 0) { delay(100); } 
-         irsend.sendRC6(pIr->code.value, pIr->code.len);
-       }
-   }
-   else if (pIr->code.type == NEC) {
+
+        if (pIr->code.type == NEC) { //original "if"
        irsend.sendNEC(pIr->code.value, pIr->code.len);
     } 
-    else if (pIr->code.type == SONY) {
-       irsend.sendSony(pIr->code.value, pIr->code.len);
-    } 
-    else if (pIr->code.type == PANASONIC) {
-       irsend.sendPanasonic(pIr->code.address, pIr->code.value);
-       Serial.print(AddrTxt);
-       Serial.println(pIr->code.address, HEX);
-    }
-    else if (pIr->code.type == JVC) {
-       irsend.sendJVC(pIr->code.value, pIr->code.len, false);
-    }
-    else if (pIr->code.type == SAMSUNG) {
-       irsend.sendSAMSUNG(pIr->code.value, pIr->code.len);
-    }
-    else if (pIr->code.type == WHYNTER) {
-       irsend.sendWhynter(pIr->code.value, pIr->code.len);
-    }
-    else if (pIr->code.type == AIWA_RC_T501) {
-       irsend.sendAiwaRCT501(pIr->code.value);
-    }
-    else if (pIr->code.type == LG || pIr->code.type == SANYO || pIr->code.type == MITSUBISHI) {
-       Serial.println(NATxt);
-       return;
-    }
-    else if (pIr->code.type == DISH) {
-      // need to repeat the command 4 times with 100 mS pause
-      for (byte i=0; i < 4; i++) {
-         if (i > 0) { delay(100); } 
-           irsend.sendDISH(pIr->code.value, pIr->code.len);
-      }
-    }
-    else if (pIr->code.type == SHARP) {
-       irsend.sendSharp(pIr->code.address, pIr->code.value);
-       Serial.print(AddrTxt);
-       Serial.println(pIr->code.address, HEX);
-    }
-    else if (pIr->code.type == DENON) {
-       irsend.sendDenon(pIr->code.value, pIr->code.len);
-    }
     else {
       // No valid IR type, found it does not make sense to broadcast
       Serial.println(NATxt);
@@ -411,11 +372,6 @@ void dump(decode_results *results) {
     Serial.print(F(" "));
     Serial.print(Type2String(results->decode_type));
 
-    if (results->decode_type == PANASONIC) {    
-      Serial.print(AddrTxt);
-      Serial.print(results->address,HEX);
-      Serial.print(ValueTxt);
-    }
     Serial.print(F(" "));
     Serial.print(results->value, HEX);
     Serial.print(F(" ("));
@@ -467,3 +423,23 @@ void recallEeprom(byte len, byte *buf)
        *buf = loadState(i);
     }
 }
+// DS18B20 temperature sensor
+void sendTempMeasurements()
+{
+  sensors.requestTemperatures();
+
+  float temperature = sensors.getTempC(insideThermometer);
+
+      // Only send data if temperature has changed and no error
+    #if COMPARE_TEMP == 1
+    if (lastTemperature != temperature && temperature != -127.00 && temperature != 85.00) {
+    #else
+    if (temperature != -127.00 && temperature != 85.00) {
+    #endif
+
+      // Send in the new temperature
+      send(temperatureMsg.set(temperature,1));
+      // Save new temperatures for next compare
+      lastTemperature=temperature;
+    }
+  }
