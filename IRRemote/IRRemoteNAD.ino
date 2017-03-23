@@ -22,6 +22,7 @@
  * Version 0.1 - Based on MySensors IRRemote v2.0
  * Version 0.2 - Added temperature measurements
  * Version 0.3 - Compare temperature and ignore faulty readings added
+ * Version 1.0 - Multiple temperature sensors
  * 
  * DESCRIPTION
  *
@@ -48,43 +49,24 @@
 // Enable and select radio type attached
 #define MY_RADIO_NRF24
 
-//#define MY_NODE_ID      5
-
 #include <SPI.h>
 #include <MySensors.h>
-
+#include <Timer.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 #include <IRremote.h>  // https://github.com/z3t0/Arduino-IRremote/releases   
 // OR install IRRemote via "Sketch" -> "Include Library" -> "Manage Labraries..."
 // Search for IRRemote b shirif and press the install button
 
-#include <Timer.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
-
 // Arduino pin to connect the IR receiver to
 int RECV_PIN     = 8;
 
-#define CHILD_ID  2  
-#define CHILD_TEMP   9
+#define CHILD_IR  9
 
 #define MY_RAWBUF  50
 const char * TYPE2STRING[] = {
-//        "UNKONWN",
-//        "RC5",
-//        "RC6",
-        "NEC",
-//        "Sony",
-//        "Panasonic",
-//        "JVC",
-//        "SAMSUNG",
-//        "Whynter",
-//        "AIWA RC T501",
-//        "LG",
-//        "Sanyo",
-//        "Mitsubishi",
-//        "Dish",
-//        "Sharp",
-//        "Denon"
+
+        "NEC"
 };
 #define Type2String(x)   TYPE2STRING[x < 0 ? 0 : x]
 #define AddrTxt          F(" addres: 0x")
@@ -127,16 +109,6 @@ byte              progModeId       = NO_PROG_MODE;
 // One can add up to 240 preset codes (if your memory lasts) to see to correct data connect the Arduino with this plug in and
 // look at the serial monitor while pressing the desired RC button
 IRCode PresetIRCodes[] = {
-//    { { RC5, 0x01,       12, 0 }},  // 11 - RC5 key "1" 
-//    { { RC5, 0x02,       12, 0 }},  // 12 - RC5 key "2"
-//    { { RC5, 0x03,       12, 0 }},  // 13 - RC5 key "3"
-//    { { NEC, 0xFF30CF,   32, 0 }},  // 14 - NEC key "1"
-//    { { NEC, 0xFF18E7,   32, 0 }},  // 15 - NEC key "2"
-//    { { NEC, 0xFF7A85,   32, 0 }},  // 16 - NEC key "3"
-//    { { NEC, 0xFF10EF,   32, 0 }},  // 17 - NEC key "4"
-//    { { NEC, 0xFF38C7,   32, 0 }},  // 18 - NEC key "5"
-//    { { RC6, 0x800F2401, 36, 0 }},  // 19 - RC6 key "1" MicroSoft Mulitmedia RC
-//    { { RC6, 0x800F2402, 36, 0 }}   // 20 - RC6 key "2" MicroSoft Mulitmedia RC
       { { NEC, 0xE13ED926, 32, 0 }},  // 21 - AUX
       { { NEC, 0xE13EA15E, 32, 0 }},  // 22 - CD  
       { { NEC, 0xE13EB14E, 32, 0 }},  // 23 - TAPE 1 MONITOR
@@ -156,22 +128,29 @@ IRCode PresetIRCodes[] = {
 #define MAX_PRESET_IR_CODES  (sizeof(PresetIRCodes)/sizeof(IRCode))
 #define MAX_IR_CODES (MAX_STORED_IR_CODES + MAX_PRESET_IR_CODES)
 
-MyMessage msgIrReceive(CHILD_ID, V_IR_RECEIVE);
-MyMessage msgIrRecord(CHILD_ID, V_IR_RECORD); 
-
-MyMessage temperatureMsg(CHILD_TEMP, V_TEMP);
+MyMessage msgIrReceive(CHILD_IR, V_IR_RECEIVE);
+MyMessage msgIrRecord(CHILD_IR, V_IR_RECORD); 
 
 Timer timer;
 int8_t tempMeasureTimer = 1;
 
 #define ONE_WIRE_BUS 4
 #define COMPARE_TEMP 1 // Send temperature only if changed? 1 = Yes 0 = No
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature sensors(&oneWire);
-//DS18B20 address. Use sketch at https://arduino-info.wikispaces.com/Brick-Temperature-DS18B20#Test%20Sketch%20to%20read%20DS18B20%20addresses to find address of sensor.
-DeviceAddress insideThermometer = { 0x28, 0xFF, 0x47, 0xE9, 0x37, 0x16, 0x04, 0xA9 };
+#define MAX_ATTACHED_DS18B20 16
 
-float lastTemperature;
+OneWire oneWire(ONE_WIRE_BUS); // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+DallasTemperature sensors(&oneWire); // Pass the oneWire reference to Dallas Temperature. 
+float lastTemperature[MAX_ATTACHED_DS18B20];
+int numSensors=0;
+bool receivedConfig = false;
+// Initialize temperature message
+MyMessage msg(0,V_TEMP);
+
+void before()
+{
+  // Startup up the OneWire library
+  sensors.begin();
+}
 
 void setup()  
 {  
@@ -185,24 +164,29 @@ void setup()
   irrecv.enableIRIn(); 
 
 // DS18B20 temperature sensor
-  tempMeasureTimer = timer.every(120000, sendTempMeasurements);
+  tempMeasureTimer = timer.every(180000, sendTempMeasurements);
 
-  sensors.begin();
-  sensors.setResolution(insideThermometer, 11);
-
+  sensors.setWaitForConversion(false);
+  
   Serial.println(F("Init done..."));
 }
 
 void presentation () 
 {
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Stue_hi-fi", "0.3");
+  sendSketchInfo("Stue_hi-fi", "1.0");
 
   // Register a sensors to gw. Use binary light for test purposes.
-  present(CHILD_ID, S_IR);
+  present(CHILD_IR, S_IR);
 
   // DS18B20 temperature sensor
-  present(CHILD_TEMP,S_TEMP, "Temperature");  
+  // Fetch the number of attached temperature sensors  
+  numSensors = sensors.getDeviceCount();
+
+  // Present all sensors to controller
+  for (int i=0; i<numSensors && i<MAX_ATTACHED_DS18B20; i++) {   
+     present(i, S_TEMP);
+  }
 }
 
 void loop() 
@@ -423,23 +407,35 @@ void recallEeprom(byte len, byte *buf)
        *buf = loadState(i);
     }
 }
+
 // DS18B20 temperature sensor
-void sendTempMeasurements()
-{
+void sendTempMeasurements()     
+{     
+  // Fetch temperatures from Dallas sensors
   sensors.requestTemperatures();
 
-  float temperature = sensors.getTempC(insideThermometer);
+  // query conversion time and sleep until conversion completed
+  int16_t conversionTime = sensors.millisToWaitForConversion(sensors.getResolution());
+  // sleep() call can be replaced by wait() call if node need to process incoming messages (or if node is repeater)
+  sleep(conversionTime);
 
-      // Only send data if temperature has changed and no error
+  // Read temperatures and send them to controller 
+  for (int i=0; i<numSensors && i<MAX_ATTACHED_DS18B20; i++) {
+
+    // Fetch and round temperature to one decimal
+    float temperature = static_cast<float>(static_cast<int>((sensors.getTempCByIndex(i)) * 10.)) / 10.;
+
+    // Only send data if temperature has changed and no error
     #if COMPARE_TEMP == 1
-    if (lastTemperature != temperature && temperature != -127.00 && temperature != 85.00) {
+    if (lastTemperature[i] != temperature && temperature != -127.00 && temperature != 85.00) {
     #else
     if (temperature != -127.00 && temperature != 85.00) {
     #endif
 
       // Send in the new temperature
-      send(temperatureMsg.set(temperature,1));
+      send(msg.setSensor(i).set(temperature,1));
       // Save new temperatures for next compare
-      lastTemperature=temperature;
+      lastTemperature[i]=temperature;
     }
   }
+}
