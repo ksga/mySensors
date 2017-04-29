@@ -136,6 +136,11 @@
 #ifndef MODULE_BME280
   #define MODULE_BME280 0
 #endif
+// Enable this module to use one of the following sensors: SENSOR_BME280  by Tyler Glenn https://github.com/finitespace/BME280
+#ifndef MODULE_BME280_ALT
+  #define MODULE_BME280_ALT 0
+#endif
+
 /***********************************
    Sensors types
 */
@@ -194,9 +199,14 @@
   #define SENSOR_MLX90614 17
 #endif
 #if MODULE_BME280 == 1
-  // MLX90614 sensor, contactless temperature sensor
+  // BME280 sensor, compact weather sensor
   #define SENSOR_BME280 18
 #endif
+#if MODULE_BME280_ALT == 1
+  // BME280 sensor, compact weather sensor by Tyler Glenn https://github.com/finitespace/BME280
+  #define SENSOR_BME280_ALT 19
+#endif
+
 // last Id: 20
 /***********************************
   Libraries
@@ -232,6 +242,11 @@
   #include <SPI.h>
   #include <Adafruit_Sensor.h>
   #include <Adafruit_BME280.h>
+#endif  
+#if MODULE_BME280_ALT == 1
+  #include <Wire.h>
+  #include <SPI.h>
+  #include <BME280I2C.h>
 #endif
 
 /**************************************
@@ -703,6 +718,23 @@ class SensorBME280: public Sensor {
 };
 #endif
 
+/*
+   SensorBME280_ALT - and more help is needed here!
+*/
+#if MODULE_BME280_ALT == 1
+class SensorBME280_ALT: public Sensor {
+  public:
+    SensorBME280_ALT(int child_id, BME280I2C*, int sensor_type);
+    // define what to do at each stage of the sketch
+    void onBefore();
+    void onSetup();
+    void onLoop();
+    void onReceive(const MyMessage & message);
+  protected:
+    BME280I2C* _bme;
+    int _sensor_type;
+};
+#endif
 
 
 /***************************************
