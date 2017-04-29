@@ -1,1 +1,1 @@
-Get Nodemanager working with my BME280 board
+Trying to get Nodemanager working with my BME280 board
