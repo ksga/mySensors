@@ -68,5 +68,7 @@
 #define MODULE_MLX90614 0
 // Enable this module to use one of the following sensors: SENSOR_BME280
 #define MODULE_BME280 0
+// Enable this module to use one of the following sensors: SENSOR_BME280 by Tyler Glenn https://github.com/finitespace/BME280
+#define MODULE_BME280_ALT 0
 
 #endif
