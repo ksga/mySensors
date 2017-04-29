@@ -1258,6 +1258,95 @@ void SensorBME280::onReceive(const MyMessage & message) {
 #endif
 
 
+/*
+   SensorBME280_ALT
+*/
+#if MODULE_BME280_ALT == 1
+// contructor  - This is one of the areas I'm pretty sure is wrong!
+SensorBME280_ALT::SensorBME280_ALT(int child_id, BME280I2C* bme, int sensor_type): Sensor(child_id,A4) {
+  // store the sensor type (0: temperature, 1: humidity, 2: pressure)
+  _sensor_type = sensor_type;
+  if (_sensor_type == 0) {
+    // temperature sensor
+    setPresentation(S_TEMP);
+    setType(V_TEMP);
+    setValueType(TYPE_FLOAT);
+  }
+  else if (_sensor_type == 1) {
+    // humidity sensor
+    setPresentation(S_HUM);
+    setType(V_HUM);
+    setValueType(TYPE_FLOAT);
+  }
+  else if (_sensor_type == 2) {
+    // pressure sensor
+    setPresentation(S_BARO);
+    setType(V_PRESSURE);
+    setValueType(TYPE_FLOAT);
+  }
+}
+
+// what do to during before
+void SensorBME280_ALT::onBefore() {
+}
+
+// what do to during setup
+void SensorBME280_ALT::onSetup() {
+}
+
+// what do to during loop  - and this one as well!
+void SensorBME280_ALT::onLoop() {
+  // temperature sensor
+  if (_sensor_type == 0) {
+    // read the temperature
+    float temperature = _bme->bme.temp();
+    // convert it
+    if (! getControllerConfig().isMetric) temperature = temperature * 1.8 + 32;
+    #if DEBUG == 1
+      Serial.print(F("BME I="));
+      Serial.print(_child_id);
+      Serial.print(F(" T="));
+      Serial.println(temperature);
+    #endif
+    // store the value
+    if (! isnan(temperature)) _value_float = temperature;
+  }
+  // Humidity Sensor
+  else if (_sensor_type == 1) {
+    // read humidity
+    float humidity = _bme->bme.hum();
+    if (isnan(humidity)) return;
+    #if DEBUG == 1
+      Serial.print(F("BME I="));
+      Serial.print(_child_id);
+      Serial.print(F(" H="));
+      Serial.println(humidity);
+    #endif
+    // store the value
+    if (! isnan(humidity)) _value_float = humidity;
+  }
+  // Pressure Sensor
+  else if (_sensor_type == 2) {
+    // read humidity
+    float pressure = _bme->bme.pres() / 100.0F;
+    if (isnan(pressure)) return;
+    #if DEBUG == 1
+      Serial.print(F("BME I="));
+      Serial.print(_child_id);
+      Serial.print(F(" P="));
+      Serial.println(pressure);
+    #endif
+    // store the value
+    if (! isnan(pressure)) _value_float = pressure;
+  }
+}
+
+// what do to as the main task when receiving a message
+void SensorBME280_ALT::onReceive(const MyMessage & message) {
+  onLoop();
+}
+#endif
+
 
 /*******************************************
    NodeManager
@@ -1961,5 +2050,3 @@ int NodeManager::_getInterruptInitialValue(int mode) {
   if (mode == FALLING) return HIGH; 
   return -1;
 }
-
-
