@@ -1537,6 +1537,22 @@ int NodeManager::registerSensor(int sensor_type, int pin, int child_id) {
       return registerSensor(new SensorBME280(child_id,bme,2));
     }
   #endif
+  #if MODULE_BME280_ALT == 1
+    else if (sensor_type == SENSOR_BME280_ALT) {
+      Adafruit_BME280I2C* bme = new BME280I2C();
+//      if (! bme->begin()) {
+//        #if DEBUG == 1
+//          Serial.println(F("NO BME"));
+//        #endif
+//        return -1;
+//      }
+      registerSensor(new SensorBME280_ALT(child_id,bme,0));
+      child_id = _getAvailableChildId();
+      registerSensor(new SensorBME280_ALT(child_id,bme,1));
+      child_id = _getAvailableChildId();
+      return registerSensor(new SensorBME280_ALT(child_id,bme,2));
+    }
+  #endif  
   else {
     #if DEBUG == 1
       Serial.print(F("INVALID "));
