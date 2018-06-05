@@ -63,12 +63,12 @@
 // Enable this module to use one of the following sensors: SENSOR_DS18B20
 #define MODULE_DS18B20 0
 // Enable this module to use one of the following sensors: SENSOR_BH1750
-#define MODULE_BH1750 0
+#define MODULE_BH1750 1
 // Enable this module to use one of the following sensors: SENSOR_MLX90614
 #define MODULE_MLX90614 0
 // Enable this module to use one of the following sensors: SENSOR_BME280
 #define MODULE_BME280 0
 // Enable this module to use one of the following sensors: SENSOR_BME280 by Tyler Glenn https://github.com/finitespace/BME280
-#define MODULE_BME280_ALT 0
+#define MODULE_BME280_ALT 1
 
 #endif

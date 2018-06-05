@@ -1,4 +1,6 @@
 /**
+ * ESP8266 - http://10.0.0.138/control?cmd=IRSEND,NEC,0xE13E29D6,32
+ * MQTT-publish "/topic/dsubtopic/cmd" {"payload": "IRSEND,NEC,0xE13E916E,32", "topic": "/homeassist/hifi/cmd"}
  * The MySensors Arduino library handles the wireless radio link and protocol
  * between your home built sensors/actuators and HA controller of choice.
  * The sensors forms a self healing radio network with optional repeaters. Each
